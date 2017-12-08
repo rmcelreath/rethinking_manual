@@ -1,0 +1,533 @@
+## R code 1.1
+install.packages(c('devtools','coda','mvtnorm'))
+library(devtools)
+install_github("rmcelreath/rethinking")
+
+## R code 1.2
+install.packages(c('coda','mvtnorm'))
+options(repos=c(getOption('repos'),rethinking='http://xcelab.net/R'))
+install.packages('rethinking',type='source')
+
+## R code 1.3
+library(rethinking)
+help(package=rethinking)
+
+## R code 1.4
+a_map_formula <- alist(
+    y ~ dnorm(mu,sigma),
+    mu <- a + b*x,
+    a ~ dnorm(0,100),
+    b ~ dnorm(0,1),
+    sigma ~ dunif(0,10)
+)
+
+## R code 1.5
+data(cars)
+
+# define model
+cars_formula <- alist(
+    dist ~ dnorm(mu,sigma),
+    mu <- a + b*speed,
+    a ~ dnorm(0,100),
+    b ~ dnorm(0,10),
+    sigma ~ dunif(0,50)
+)
+
+# pass to map
+cars_map <- map( cars_formula , data=cars )
+
+# default show information
+show(cars_map)
+
+## R code 1.6
+cars_formula2 <- alist(
+    dist ~ dnorm(mu,sigma),
+    mu <- a + b*speed
+)
+start_list <- list(
+    a=mean(cars$dist),
+    b=0,
+    sigma=sd(cars$dist)
+)
+cars_mle <- map( cars_formula2 , data=cars , start=start_list )
+summary(cars_mle)
+
+## R code 1.7
+data(UCBadmit)
+UCBadmit$male <- ifelse(UCBadmit$applicant.gender=="male",1,0)
+ucb_formula <- alist(
+    admit ~ dbinom(applications,p),
+    logit(p) <- a + b*male,
+    a ~ dnorm(0,10),
+    b ~ dnorm(0,1)
+)
+ucb_map <- map( ucb_formula , data=UCBadmit )
+
+## R code 1.8
+# convert dept factor to integer index variable
+UCBadmit$dept_id <- coerce_index(UCBadmit$dept)
+
+# formula
+ucb_formula2 <- alist(
+    admit ~ dbinom(applications,p),
+    logit(p) <- a[dept_id] + b*male,
+    a[dept_id] ~ dnorm(0,10),
+    b ~ dnorm(0,1)
+)
+
+ucb_map2 <- map( ucb_formula2 , data=UCBadmit )
+
+precis(ucb_map2,depth=2)
+
+## R code 1.9
+data(UCBadmit)
+
+# construct 'male' dummy variable
+UCBadmit$male <- ifelse(UCBadmit$applicant.gender=="male",1,0)
+
+# convert dept factor to integer index variable
+UCBadmit$dept_id <- coerce_index(UCBadmit$dept)
+
+# formula
+ucb_formula3 <- alist(
+    admit ~ dbinom(applications,p),
+    logit(p) <- a[dept_id] + b*male,
+    a[dept_id] ~ dnorm(a_bar,sigma),
+    b ~ dnorm(0,1),
+    a_bar ~ dnorm(0,10),
+    sigma ~ dcauchy(0,2.5)
+)
+
+ucb_stan <- map2stan( ucb_formula3 , data=UCBadmit ,
+    iter=2000 , warmup=1000 , chains=1 ,
+    refresh=500 )
+
+## R code 1.10
+# formula
+ucb_formula4 <- alist(
+    admit ~ binomial(applications,p),
+    logit(p) <- a[dept_id] + b*male,
+    a[dept_id] ~ normal(a_bar,sigma),
+    b ~ normal(0,1),
+    a_bar ~ normal(0,10),
+    sigma ~ cauchy(0,2.5)
+)
+
+## R code 1.11
+post <- extract.samples(ucb_stan)
+str(post)
+
+## R code 1.12
+stancode(ucb_stan)
+
+## R code 1.13
+precis(ucb_stan,depth=2)
+
+## R code 1.14
+divergent(ucb_stan)
+
+## R code 1.15
+sp <- dashboard(ucb_stan)
+
+## R code 1.16
+plot(ucb_stan)
+
+## R code 1.17
+ucb_stan_4chains <- map2stan( ucb_formula3 , data=UCBadmit ,
+    iter=2000 , warmup=1000 , chains=4 , cores=3 ,
+    refresh=-1 )
+
+## R code 1.18
+data(chimpanzees)
+d <- list(
+    pulled_left = chimpanzees$pulled_left ,
+    prosoc_left = chimpanzees$prosoc_left ,
+    condition = chimpanzees$condition ,
+    actor = as.integer( chimpanzees$actor )
+)
+m <- map2stan(
+    alist(
+        pulled_left ~ dbinom(1,p),
+        logit(p) <- a_actor[actor] + (bp + bpc*condition)*prosoc_left,
+        a_actor[actor] ~ dnorm( a , sigma_actor ) ,
+        a ~ dnorm(0,10),
+        bp ~ dnorm(0,10),
+        bpc ~ dnorm(0,10),
+        sigma_actor ~ dcauchy(0,1)
+    ) ,
+    data=d, iter=6000 , chains=3 , cores=3 , refresh=-1 )
+
+p <- link(m,n=2000)
+str(p)
+
+## R code 1.19
+new_data <- data.frame(
+    actor = 4,
+    prosoc_left = c(1,0,1,0),
+    condition = c(1,1,0,0)
+)
+p <- link(m,data=new_data)
+str(p)
+
+## R code 1.20
+p_mean <- apply(p,2,mean)
+p_HPDI <- apply(p,2,HPDI,prob=0.9)
+rbind(p_mean,p_HPDI)
+
+## R code 1.21
+m2 <- map2stan(
+    alist(
+        pulled_left ~ dbinom(1,p),
+        logit(p) <- a_actor[actor] + BP*prosoc_left,
+        BP <- bp + bpc*condition,
+        a_actor[actor] ~ dnorm( a , sigma_actor ) ,
+        a ~ dnorm(0,10),
+        bp ~ dnorm(0,10),
+        bpc ~ dnorm(0,10),
+        sigma_actor ~ dcauchy(0,1)
+    ) ,
+    data=d, iter=6000 , chains=3 , cores=3 , refresh=-1 )
+
+p <- link(m2,n=2000)
+str(p)
+
+## R code 1.22
+sim_pulls <- sim(m,data=new_data)
+str(sim_pulls)
+
+## R code 1.23
+sim_mean <- apply(sim_pulls,2,mean)
+cbind(sim_mean,p_mean)
+
+## R code 1.24
+data(Kline)
+Kline$log_pop <- log(Kline$population)
+Kline$id <- 1:10
+m <- map2stan(
+    alist(
+        total_tools ~ dpois(lambda),
+        log(lambda) <- a + a_society[id] + b*log_pop,
+        a_society[id] ~ dnorm(0,sigma),
+        a ~ dnorm(0,10),
+        b ~ dnorm(0,1),
+        sigma ~ dcauchy(0,2.5)
+    ),
+    data=Kline , chains=3 , core=3 , refresh=-1 )
+postcheck(m)
+
+## R code 1.25
+m <- map2stan(
+    alist(
+        total_tools ~ dpois(lambda),
+        log(lambda) <- a + b*log_pop,
+        a ~ dnorm(0,10),
+        b ~ dnorm(0,1)
+    ),
+    data=Kline , chains=1 , warmup=500 , iter=1e4 )
+
+log_pop.seq <- seq(from=6,to=13,length.out=30)
+new_data <- data.frame(log_pop=log_pop.seq)
+
+lambda <- link(m,data=new_data,n=9000)
+lambda.mean <- apply(lambda,2,mean)
+lambda.HPDI <- apply(lambda,2,HPDI)
+tt.sim <- sim(m,data=new_data,n=9000)
+tt.HPDI <- apply(tt.sim,2,HPDI)
+
+plot( total_tools ~ log_pop , data=Kline , pch=16 , col=rangi2 )
+lines( log_pop.seq , lambda.mean )
+shade( lambda.HPDI , log_pop.seq )
+shade( tt.HPDI , log_pop.seq )
+
+## R code 1.26
+str(tt.sim)
+
+## R code 1.27
+data(rugged)
+# remove cases with missing values
+d <- rugged[ complete.cases(rugged$rgdppc_2000) , ]
+d$log_gdp <- log(d$rgdppc_2000)
+dlist <- list(
+    log_gdp = d$log_gdp,
+    rugged = d$rugged,
+    africa = d$cont_africa
+)
+
+# intercept-only model
+m1 <- map2stan(
+    alist(
+        log_gdp ~ dnorm(mu,sigma),
+        mu <- a,
+        a ~ dnorm(0,100),
+        sigma ~ dcauchy(0,2.5)
+    ),
+    data=dlist ,
+    warmup=1000 , iter=5000 , chains=2 , cores=2 , refresh=-1 )
+
+# model with terrain ruggedness
+m2 <- map2stan(
+    alist(
+        log_gdp ~ dnorm(mu,sigma),
+        mu <- a + bR*rugged,
+        a ~ dnorm(0,100),
+        bR ~ dnorm(0,10),
+        sigma ~ dcauchy(0,2.5)
+    ),
+    data=dlist ,
+    warmup=1000 , iter=5000 , chains=2 , cores=2 , refresh=-1 )
+
+# model with Africa indicator
+m3 <- map2stan(
+    alist(
+        log_gdp ~ dnorm(mu,sigma),
+        mu <- a + bA*africa,
+        a ~ dnorm(0,100),
+        bA ~ dnorm(0,10),
+        sigma ~ dcauchy(0,2.5)
+    ),
+    data=dlist ,
+    warmup=1000 , iter=5000 , chains=2 , cores=2 , refresh=-1 )
+
+# model with both terrain ruggedness and Africa indicator
+# note vector prior notation for both coefficients
+m4 <- map2stan(
+    alist(
+        log_gdp ~ dnorm(mu,sigma),
+        mu <- a + bR*rugged + bA*africa,
+        a ~ dnorm(0,100),
+        c(bR,bA) ~ dnorm(0,10),
+        sigma ~ dcauchy(0,2.5)
+    ),
+    data=dlist ,
+    warmup=1000 , iter=5000 , chains=2 , cores=2 , refresh=-1 )
+
+# model with interaction of terrain ruggedness and Africa indicator
+m5 <- map2stan(
+    alist(
+        log_gdp ~ dnorm(mu,sigma),
+        mu <- a + bR*rugged + bA*africa + bRA*rugged*africa,
+        a ~ dnorm(0,100),
+        c(bR,bA,bRA) ~ dnorm(0,10),
+        sigma ~ dcauchy(0,2.5)
+    ),
+    data=dlist ,
+    warmup=1000 , iter=5000 , chains=2 , cores=2 , refresh=-1 )
+
+## R code 1.28
+compare(m1,m2,m3,m4,m5)
+
+## R code 1.29
+compare_table <- compare(m1,m2,m3,m4,m5)
+compare_table@dSE
+
+## R code 1.30
+plot(compare(m1,m2,m3,m4,m5))
+
+## R code 1.31
+rugged.seq <- seq(from=0,to=7,length.out=30)
+new_data <- data.frame(
+    africa = 1, # imaginary nation in Africa
+    rugged = rugged.seq
+)
+
+# change n argument to change number of samples used and smooth results
+m1to5_ensemble <- ensemble(m1,m2,m3,m4,m5,data=new_data,n=3000)
+
+## R code 1.32
+mu.mean <- apply( m1to5_ensemble$link , 2 , mean )
+mu.HPDI <- apply( m1to5_ensemble$link , 2 , HPDI )
+
+# extract just raw data with same africa value as new_data
+africa_val <- new_data$africa[1]
+plot_data <- d[ d$cont_africa==africa_val , c("log_gdp","rugged") ]
+plot( log_gdp ~ rugged , data=plot_data , pch=16 , col=rangi2 )
+mtext( concat("africa=",africa_val) )
+
+# overlay counter-factual predictions
+lines( rugged.seq , mu.mean )
+shade( mu.HPDI , rugged.seq )
+
+## R code 1.33
+data(milk)
+d <- list(
+    kcal = milk$kcal.per.g,
+    log_mass = log(milk$mass),
+    neocortex = milk$neocortex.perc/100
+)
+m <- map2stan(
+    alist(
+        kcal ~ dnorm(mu,sigma),
+        mu <- a + bM*log_mass + bN*neocortex,
+        a ~ dnorm(0,100),
+        c(bM,bN) ~ dnorm(0,10),
+        sigma ~ dcauchy(0,2.5)
+    ),
+    data=d , warmup=500 , iter=2500 , chains=3 , cores=3 , refresh=-1 )
+
+## R code 1.34
+m2 <- map2stan(
+    alist(
+        kcal ~ dnorm(mu,sigma),
+        mu <- a + bM*log_mass + bN*neocortex,
+        neocortex ~ dnorm(mu_N,sigma_N),
+        mu_N ~ dnorm(0,10),
+        sigma_N ~ dcauchy(0,1),
+        a ~ dnorm(0,100),
+        c(bM,bN) ~ dnorm(0,10),
+        sigma ~ dcauchy(0,2.5)
+    ),
+    data=d , warmup=500 , iter=2500 , chains=3 , cores=3 , refresh=-1 )
+
+## R code 1.35
+precis(m2,depth=2)
+
+## R code 2.1
+library(rethinking)
+data(Howell1)
+f_lm <- alist(
+    height ~ dnorm(mu,sigma),
+    mu <- a + b*weight,
+    a ~ dnorm(170,100),
+    b ~ dnorm(0,1),
+    sigma ~ dcauchy(0,2.5)
+)
+set.seed(1) # just for the example, so results repeatable
+m_lm <- map2stan( f_lm , data=Howell1 , refresh=-1 )
+precis(m_lm)
+
+## R code 2.2
+f_lmm <- alist(
+    height ~ dnorm(mu,sigma),
+    mu <- a_group[group] + b*weight,
+    a_group[group] ~ dnorm(a,tau),
+    a ~ dnorm(170,100),
+    b ~ dnorm(0,1),
+    sigma ~ dcauchy(0,2.5),
+    tau ~ dcauchy(0,2.5)
+)
+
+## R code 2.3
+f_lmm2 <- alist(
+    height ~ dnorm(mu,sigma),
+    mu <- a + a_group1[group1] + a_group2[group2] + b*weight,
+    a_group1[group1] ~ dnorm(0,tau1),
+    a_group2[group2] ~ dnorm(0,tau2),
+    a ~ dnorm(170,100),
+    b ~ dnorm(0,1),
+    sigma ~ dcauchy(0,2.5),
+    tau1 ~ dcauchy(0,2.5),
+    tau2 ~ dcauchy(0,2.5)
+)
+
+## R code 2.4
+f_lmm3 <- alist(
+    height ~ dnorm(mu,sigma),
+    mu <- a_group[group] + b_group[group]*weight,
+    c(a_group,b_group)[group] ~ dmvnorm2(c(a,b),tau,Rho),
+    a ~ dnorm(170,100),
+    b ~ dnorm(0,1),
+    sigma ~ dcauchy(0,2.5),
+    tau ~ dcauchy(0,2.5),
+    Rho ~ dlkjcorr(2)
+)
+
+## R code 2.5
+f_lmm4 <- alist(
+    height ~ dnorm(mu,sigma),
+    mu <- a + a_group[group] + (b + b_group[group])*weight,
+    c(a_group,b_group)[group] ~ dmvnorm2(0,tau,Rho),
+    a ~ dnorm(170,100),
+    b ~ dnorm(0,1),
+    sigma ~ dcauchy(0,2.5),
+    tau ~ dcauchy(0,2.5),
+    Rho ~ dlkjcorr(2)
+)
+
+## R code 2.6
+f_lmm5 <- alist(
+    height ~ dnorm(mu,sigma),
+    mu <- a + a_group[group] + (b + b_group[group])*weight,
+    c(a_group,b_group)[group] ~ dmvnormNC(tau,Rho),
+    a ~ dnorm(170,100),
+    b ~ dnorm(0,1),
+    sigma ~ dcauchy(0,2.5),
+    tau ~ dcauchy(0,2.5),
+    Rho ~ dlkjcorr(2)
+)
+
+## R code 2.7
+f_glm_bernoulli <- alist(
+    y ~ dbinom(1,p),
+    logit(p) <- a + b*x,
+    a ~ dnorm(0,1),
+    b ~ dnorm(0,1)
+)
+
+## R code 2.8
+f_glm_binomial <- alist(
+    y ~ dbinom(n,p),
+    logit(p) <- a + b*x,
+    a ~ dnorm(0,1),
+    b ~ dnorm(0,1)
+)
+
+## R code 2.9
+f_glm_pois <- alist(
+    y ~ dpois(lambda),
+    log(lambda) <- a + b*x,
+    a ~ dnorm(0,10),
+    b ~ dnorm(0,1)
+)
+
+## R code 2.10
+f_glm_pois <- alist(
+    y ~ dpois(lambda),
+    log(lambda) <- offset + a + b*x,
+    a ~ dnorm(0,10),
+    b ~ dnorm(0,1)
+)
+
+## R code 2.11
+f_glm_bbinom <- alist(
+    y ~ dbetabinom(n,p,theta),
+    logit(p) <- a + b*x,
+    a ~ dnorm(0,10),
+    b ~ dnorm(0,1),
+    theta ~ dexp(2)
+)
+
+## R code 2.12
+f_glm_bbinom2 <- alist(
+    y ~ dbetabinom(n,p,exp(log_theta)),
+    logit(p) <- a + b*x,
+    a ~ dnorm(0,10),
+    b ~ dnorm(0,1),
+    log_theta ~ dnorm(0,1)
+)
+
+## R code 2.13
+f_glm_gampois <- alist(
+    y ~ dgampois(mu,scale),
+    log(mu) <- a + b*x,
+    a ~ dnorm(0,10),
+    b ~ dnorm(0,1),
+    scale ~ dexp(2)
+)
+
+## R code 2.14
+f_glm_gamma <- alist(
+    y ~ dgamma2(mu,scale),
+    log(mu) <- a + b*x,
+    a ~ dnorm(0,10),
+    b ~ dnorm(0,1),
+    scale ~ dexp(2)
+)
+
+## R code 2.15
+f_glm_exp <- alist(
+    y ~ dexp(lambda),
+    log(lambda) <- a + b*x,
+    a ~ dnorm(0,10),
+    b ~ dnorm(0,1)
+)
+
